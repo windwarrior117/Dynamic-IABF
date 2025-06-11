@@ -9,6 +9,8 @@ os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 from tensorflow.python.platform import flags
 FLAGS = flags.FLAGS
 
+import datetime
+
 """
 only change flip samples and miw
 """
@@ -98,6 +100,54 @@ def process_flags():
 
 	return
 
+def create_output_path():
+    """创建统一的输出路径"""
+    # 确定模型类型
+    if FLAGS.use_dynamic_model:
+        model_type = "DynamicIABF"
+    elif FLAGS.miw > 0 and FLAGS.flip_samples > 0:
+        model_type = "IABF"
+    elif FLAGS.noise > 0:
+        model_type = "NECST"
+    else:
+        model_type = "UAE"
+    
+    # 创建日期时间戳
+    timestamp = datetime.datetime.now().strftime("%Y%m%d")
+    
+    # 创建参数简写
+    param_shorts = []
+    param_shorts.append(f"b{FLAGS.n_bits}")
+    
+    if FLAGS.miw > 0:
+        param_shorts.append(f"m{FLAGS.miw}")
+    
+    if FLAGS.flip_samples > 0:
+        param_shorts.append(f"f{FLAGS.flip_samples}")
+        
+    if FLAGS.noise > 0:
+        param_shorts.append(f"n{FLAGS.noise}")
+    
+    if FLAGS.n_epochs != 100:  # 只有非默认值时才添加
+        param_shorts.append(f"e{FLAGS.n_epochs}")
+    
+    # DynamicIABF特有标记
+    if FLAGS.use_dynamic_model:
+        features = ""
+        if FLAGS.adaptive_noise:
+            features += "a"
+        if FLAGS.progressive_training:
+            features += "p"
+        if features:
+            param_shorts.append(features)
+    
+    # 组合所有元素生成目录名
+    params_str = "_".join(param_shorts)
+    dir_name = f"{timestamp}_{params_str}_{FLAGS.exp_id}"
+    
+    # 构建完整路径
+    return os.path.join(model_type, FLAGS.datasource, dir_name)
+
 def main():
 	"""
 	run program: preprocess data, train model, validate/test.
@@ -106,25 +156,11 @@ def main():
 	# print (FLAGS.test)
 	# tf.reset_default_graph()
 	os.environ['CUDA_VISIBLE_DEVICES'] = str(FLAGS.gpu_id)
-	# subpath = 'wadv_' + str(FLAGS.wadv) + 'cew_' + str(FLAGS.cew) +'klw_' + str(FLAGS.klw) + 'noise_' + str(FLAGS.noise)
-	subpath = 'miw_' + str(FLAGS.miw) + '_flip_' + str(FLAGS.flip_samples) + '_bits_' + str(FLAGS.n_bits) + '_epochs_' + str(FLAGS.n_epochs)
 	
-	# 为动态模型添加特殊标识
-	if FLAGS.use_dynamic_model:
-		model_type = "DynamicIABF"
-		if FLAGS.adaptive_noise:
-			model_type += "_adaptive"
-		if FLAGS.progressive_training:
-			model_type += "_progressive"
-		subpath = model_type + '_' + subpath
-	
-	print(subpath)
-	# FLAGS.logdir = os.path.join(FLAGS.logdir, FLAGS.datasource, subpath, FLAGS.exp_id)
-	# FLAGS.outdir = os.path.join(FLAGS.outdir, FLAGS.datasource, subpath, FLAGS.exp_id)
-	# subpath = 'noise_' + str(FLAGS.noise)
-	FLAGS.logdir = os.path.join(FLAGS.logdir, FLAGS.datasource, subpath, FLAGS.exp_id)
-	FLAGS.outdir = os.path.join(FLAGS.outdir, FLAGS.datasource, subpath, FLAGS.exp_id)
-	# FLAGS.outdir = '/mnt/cephfs_hl/arnold/vae/mcmc/run1/tasks/102803/log'
+	# 使用新的目录结构创建函数
+	output_path = create_output_path()
+	FLAGS.logdir = os.path.join(FLAGS.logdir, output_path)
+	FLAGS.outdir = os.path.join(FLAGS.outdir, output_path)
 	
 	if not os.path.exists(FLAGS.logdir):
 		os.makedirs(FLAGS.logdir)

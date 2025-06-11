@@ -22,6 +22,19 @@ DynamicIABF基于两个核心理念：
 
 ---
 
+## 目录
+
+- [数据集准备](#-数据集准备)
+- [命令行参数](#%EF%B8%8F-命令行参数)
+- [使用示例](#-使用示例)
+- [模型比较](#-模型比较)
+- [自动化对照训练脚本](#自动化对照训练脚本)
+- [完整训练流程教程](#完整训练流程教程)
+- [常见问题](#常见问题)
+- [更新日志](#更新日志)
+
+---
+
 ## 🔍 数据集准备
 
 本项目使用TensorFlow的[TFRecords](https://www.tensorflow.org/tutorials/load_data/tf_records)格式处理数据。数据准备流程：
@@ -722,6 +735,8 @@ python3 plot.py --auto_discover --model_types "DynamicIABF" "IABF" --plot_type n
 - **noise_analysis.png**: 不同噪声水平的性能分析
 - **reconstruction_errors_table.png**: 重建误差表格
 
+
+
 #### DynamicIABF特有图表
 
 - **dynamic_iabf_features.png**: 专门针对DynamicIABF模型的特性分析
@@ -764,6 +779,54 @@ python3 plot.py --auto_discover --model_types "DynamicIABF" "IABF" --plot_type n
 通过直观的样本重建对比，可以看到DynamicIABF在高噪声环境下保持更高的重建质量，PSNR值通常高于传统IABF和NECST模型。
 
 ## 更新日志
+
+### 2025年5月25日更新：自动化对照训练脚本
+
+1. **新增自动化对照训练脚本**
+   - 添加`run_comparison.sh`脚本实现完整训练流程的一键式执行
+   - 支持数据准备、多模型训练和结果可视化的自动化流程
+   - 使用单一实验ID管理所有相关文件和目录
+
+2. **实验管理优化**
+   - 结构化日志记录系统，跟踪每个训练阶段
+   - 按实验ID组织输出结果，方便对比分析
+   - 自动利用plot.py的增强功能进行结果可视化
+
+3. **使用便利性提升**
+   - 添加参数化配置，支持自定义数据集、编码比特数和训练轮数
+   - 提供易于理解的使用示例和结果展示方法
+   - 预留实验框架以支持更复杂的对比测试
+
+4. **文档更新**
+   - 在README中详细介绍脚本功能和使用方法
+   - 添加多种使用场景的示例命令
+   - 说明结果目录结构和日志文件组织
+
+该脚本与之前的plot.py增强功能协同工作，共同提供了从训练到可视化的一站式实验解决方案，大大简化了多模型对比实验的流程。
+
+### 2025年5月20日更新：plot.py可视化工具增强
+
+1. **增强的模型目录查找功能**
+   - `find_model_dirs`函数完全支持新旧目录结构
+   - 能自动识别不同目录结构下的模型类型
+   - 根据config.json内容智能识别模型为DynamicIABF/IABF/NECST/UAE
+
+2. **自动发现模型目录功能**
+   - 新增`--auto_discover`命令行参数，自动查找符合条件的模型
+   - 支持通过`--model_types`参数过滤特定类型的模型
+   - 简化了可视化不同模型的流程，无需手动指定每个模型路径
+
+3. **智能模型名称生成**
+   - 根据目录结构自动生成便于识别的模型名称
+   - 格式为`{模型类型}-{数据集}-{实验ID}`
+   - 从实验目录名中自动提取关键信息，忽略时间戳
+
+4. **文档更新**
+   - 更新README中的完整训练流程教程
+   - 添加新的可视化命令示例
+   - 说明如何利用新功能简化模型对比分析
+
+这些增强功能使得模型结果的可视化和对比更加便捷，特别是在管理多个不同类型模型的实验时，大大减少了手动指定路径的工作量。
 
 ### 2025年5月15日更新：DynamicIABF模型引入
 
@@ -826,6 +889,46 @@ python3 plot.py --auto_discover --model_types "DynamicIABF" "IABF" --plot_type n
 - 支持为每个数据集提取和保存测试样本
 - 增强PSNR计算精度
 
+### 20250426：优化results输出目录结构
+
+为了更好地组织实验结果文件，对results输出目录结构进行了如下调整：
+
+- **三级目录结构**：按照`{模型类型}/{数据集}/{日期时间戳}_{参数简写}_{实验ID}/`进行组织
+- **模型类型分组**：将模型结果按DynamicIABF、IABF、NECST和UAE四种类型进行分类存储
+- **参数简写**：采用简化的参数命名约定，如`b100`(100位编码)、`m1e-7`(miw值)、`f7`(7位翻转)等
+- **时间戳标记**：使用`YYYYMMDD`格式的时间戳标记每个实验的执行日期
+
+示例目录结构：
+```
+results/
+├── IABF/
+│   └── mnist/
+│       └── 20250426_b100_m1e-7_f7_iabf_test10/
+├── NECST/
+│   └── mnist/
+│       └── 20250426_b100_n0.1_necst_test10/
+└── DynamicIABF/
+    └── mnist/
+        └── 20250426_b100_m1e-7_f7_ap_dynamic_full/
+```
+
+同时，对plot.py也进行了功能增强，支持新的目录结构：
+
+- **增强的模型发现功能**：`find_model_dirs`函数支持新旧目录结构，能自动查找并识别不同类型的模型
+- **自动识别模型类型**：通过config.json内容识别模型类型（DynamicIABF/IABF/NECST/UAE）
+- **友好的命令行接口**：新增`--auto_discover`参数自动发现模型目录，简化使用流程
+- **模型类型过滤**：通过`--model_types`参数过滤特定类型的模型，如：
+  ```bash
+  python3 plot.py --auto_discover --model_types "DynamicIABF" "IABF"
+  ```
+- **自动生成便于识别的模型名称**：格式为`{ModelType}-{dataset}-{experiment_id}`
+
+这些更新使得实验结果组织更加条理清晰，也让不同模型的对比分析更加便捷。
+
+详细说明请参考项目中的`directory_structure.md`文件。
+
+---
+
 ## 完整训练流程教程
 
 本教程详细介绍使用IABF框架完成训练的完整流程，包括数据准备、模型训练和结果可视化。
@@ -841,8 +944,8 @@ ls -la data/mnist/
 python3 data_setup/download.py mnist
 python3 data_setup/convert_to_records.py --dataset=mnist
 
-# 创建结果目录
-mkdir -p ./results/mnist/DynamicIABF_bits_100_epochs_10 ./results/mnist/miw_1e-07_flip_7_bits_100_epochs_10 ./results/mnist/miw_0.0_flip_0_bits_100_epochs_10
+# 创建结果目录 - 注意新的目录结构按模型类型组织
+mkdir -p ./results/DynamicIABF/mnist ./results/IABF/mnist ./results/NECST/mnist ./results/UAE/mnist
 ```
 
 ### 2. 模型训练
@@ -851,26 +954,13 @@ mkdir -p ./results/mnist/DynamicIABF_bits_100_epochs_10 ./results/mnist/miw_1e-0
 
 ```bash
 # 训练完整版DynamicIABF（同时启用自适应噪声和渐进式训练）
-python3 main.py --exp_id="dynamic_iabf_full" --use_dynamic_model=True --adaptive_noise=True \
-  --progressive_training=True --noise_min=0.01 --noise_max=0.3 --noise_adapt_rate=0.05 \
-  --flip_samples=7 --miw=0.0000001 --noise=0.1 --test_noise=0.1 --datadir=./data \
-  --datasource=mnist --channel_model=bsc --n_bits=100 --n_epochs=10 --batch_size=100 \
-  --lr=0.001 --optimizer=adam --is_binary=False --dec_arch="500,500" --enc_arch="500,500" \
-  --reg_param=0.0001
+python3 main.py --exp_id="dynamic_iabf_full" --use_dynamic_model=True --adaptive_noise=True --progressive_training=True --noise_min=0.01 --noise_max=0.3 --noise_adapt_rate=0.05 --flip_samples=7 --miw=0.0000001 --noise=0.1 --test_noise=0.1 --datadir=./data --datasource=mnist --channel_model=bsc --n_bits=100 --n_epochs=10 --batch_size=100 --lr=0.001 --optimizer=adam --is_binary=False --dec_arch="500,500" --enc_arch="500,500" --reg_param=0.0001
 
 # 训练仅启用自适应噪声的DynamicIABF
-python3 main.py --exp_id="dynamic_iabf_adaptive" --use_dynamic_model=True --adaptive_noise=True \
-  --progressive_training=False --noise_adapt_rate=0.05 --flip_samples=7 --miw=0.0000001 \
-  --noise=0.1 --test_noise=0.1 --datadir=./data --datasource=mnist --channel_model=bsc \
-  --n_bits=100 --n_epochs=10 --batch_size=100 --lr=0.001 --optimizer=adam --is_binary=False \
-  --dec_arch="500,500" --enc_arch="500,500" --reg_param=0.0001
+python3 main.py --exp_id="dynamic_iabf_adaptive" --use_dynamic_model=True --adaptive_noise=True --progressive_training=False --noise_adapt_rate=0.05 --flip_samples=7 --miw=0.0000001 --noise=0.1 --test_noise=0.1 --datadir=./data --datasource=mnist --channel_model=bsc --n_bits=100 --n_epochs=10 --batch_size=100 --lr=0.001 --optimizer=adam --is_binary=False --dec_arch="500,500" --enc_arch="500,500" --reg_param=0.0001
 
 # 训练仅启用渐进式训练的DynamicIABF
-python3 main.py --exp_id="dynamic_iabf_progressive" --use_dynamic_model=True --adaptive_noise=False \
-  --progressive_training=True --noise_min=0.01 --noise_max=0.3 --flip_samples=7 --miw=0.0000001 \
-  --noise=0.1 --test_noise=0.1 --datadir=./data --datasource=mnist --channel_model=bsc \
-  --n_bits=100 --n_epochs=10 --batch_size=100 --lr=0.001 --optimizer=adam --is_binary=False \
-  --dec_arch="500,500" --enc_arch="500,500" --reg_param=0.0001
+python3 main.py --exp_id="dynamic_iabf_progressive" --use_dynamic_model=True --adaptive_noise=False --progressive_training=True --noise_min=0.01 --noise_max=0.3 --flip_samples=7 --miw=0.0000001 --noise=0.1 --test_noise=0.1 --datadir=./data --datasource=mnist --channel_model=bsc --n_bits=100 --n_epochs=10 --batch_size=100 --lr=0.001 --optimizer=adam --is_binary=False --dec_arch="500,500" --enc_arch="500,500" --reg_param=0.0001
 ```
 
 #### IABF模型
@@ -894,11 +984,11 @@ python3 main.py --exp_id="uae_test10" --flip_samples=0 --miw=0.0 --noise=0.0 --t
 ### 3. 监控训练进度
 
 ```bash
-# 查看训练日志
-tail -n 20 ./results/mnist/DynamicIABF_bits_100_epochs_10/dynamic_iabf_full/log.txt
-tail -n 20 ./results/mnist/miw_1e-07_flip_7_bits_100_epochs_10/iabf_test10/log.txt
-tail -n 20 ./results/mnist/miw_0.0_flip_0_bits_100_epochs_10/necst_test10/log.txt
-tail -n 20 ./results/mnist/miw_0.0_flip_0_bits_100_epochs_10/uae_test10/log.txt
+# 查看训练日志 - 使用新的目录结构
+tail -n 20 ./results/DynamicIABF/mnist/*/dynamic_iabf_full/log.txt
+tail -n 20 ./results/IABF/mnist/*/iabf_test10/log.txt
+tail -n 20 ./results/NECST/mnist/*/necst_test10/log.txt
+tail -n 20 ./results/UAE/mnist/*/uae_test10/log.txt
 ```
 
 ### 4. 结果可视化
@@ -907,73 +997,137 @@ tail -n 20 ./results/mnist/miw_0.0_flip_0_bits_100_epochs_10/uae_test10/log.txt
 # 创建plots目录
 mkdir -p ./plots
 
-# 生成包含DynamicIABF的比较图表
-python3 plot.py --model_dirs "mnist/DynamicIABF_bits_100_epochs_10/dynamic_iabf_full" "mnist/miw_1e-07_flip_7_bits_100_epochs_10/iabf_test10" "mnist/miw_0.0_flip_0_bits_100_epochs_10/necst_test10" "mnist/miw_0.0_flip_0_bits_100_epochs_10/uae_test10" --model_names "DynamicIABF" "IABF" "NECST" "UAE" --plot_type all --output_dir "./plots/"
+# 方法1：使用自动发现功能 - 自动查找所有模型类型
+python3 plot.py --dataset mnist --auto_discover --output_dir "./plots/" --plot_type all
 
-# 只比较不同DynamicIABF配置
-python3 plot.py --model_dirs "mnist/DynamicIABF_bits_100_epochs_10/dynamic_iabf_full" "mnist/DynamicIABF_bits_100_epochs_10/dynamic_iabf_adaptive" "mnist/DynamicIABF_bits_100_epochs_10/dynamic_iabf_progressive" --model_names "完整DynamicIABF" "仅自适应" "仅渐进式" --plot_type all --output_dir "./plots_dynamic/"
+# 方法2：仅查找特定模型类型
+python3 plot.py --dataset mnist --auto_discover --model_types "DynamicIABF" "IABF" --output_dir "./plots_compare/" --plot_type all
+
+# 方法3：手动指定模型目录（使用相对于结果目录的路径）
+python3 plot.py --dataset mnist --model_dirs "DynamicIABF/mnist/20250515_b100_ap_dynamic_iabf_full" "IABF/mnist/20250515_b100_m1e-7_f7_iabf_test10" --model_names "DynamicIABF" "IABF" --output_dir "./plots_manual/" --plot_type all
+
+# 创建重建图像样本，并强制更新测试数据
+python3 plot.py --dataset mnist --auto_discover --extract_data --num_samples 5 --output_dir "./plots_samples/" --plot_type reconstruction
+
+# 生成噪声分析图表
+python3 plot.py --dataset mnist --auto_discover --model_types "DynamicIABF" "IABF" "NECST" --output_dir "./plots_noise/" --plot_type noise
 ```
 
-### 5. 查看生成的图表
 
-生成的图表包括：
-- `learning_curves.png`：训练和验证损失曲线
-- `mutual_information.png`：互信息值比较
-- `distribution_comparison.png`：边缘概率分布
-- `reconstruction_samples.png`：重建图像对比
-- `test_metrics.png`：测试指标比较
-- `noise_analysis.png`：不同噪声水平的性能分析（包含DynamicIABF的噪声适应性能）
-- `dynamic_iabf_features.png`：DynamicIABF特性分析（仅在包含DynamicIABF模型时生成）
 
-## 常见问题
+## 自动化对照训练脚本
 
-**Q1: 如何选择合适的互信息权重(miw)值？**  
-A1: 互信息权重是一个超参数，通常取较小的值（如1e-7）。可以尝试不同的值并观察模型性能。值太大可能导致训练不稳定，太小则效果不明显。
-**Q2: 对抗性比特翻转的位数应如何设置？**  
-A2: 对于100位编码，通常设置为5-10位比较合适。位数太少效果不明显，太多可能导致训练困难。
+为了简化多模型对照训练和对比分析的过程，项目提供了自动化脚本`run_comparison.sh`。此脚本可以一键完成上述完整训练流程，包括数据准备、四种模型训练和结果可视化，大大提高了实验效率。
 
-**Q3: 如何处理其他类型的数据集？**  
-A3: 对于图像以外的数据类型，可能需要修改编码器和解码器的架构以适应数据特性。原理相同，但具体实现可能有所不同。
+### 脚本功能
 
-**Q4: 模型在训练过程中出现NaN值怎么办？**  
-A4: 这通常是由于学习率过高或梯度爆炸导致的。可以尝试降低学习率，增加梯度裁剪，或减小互信息权重。
+`run_comparison.sh`具有以下主要功能：
 
-**Q5: 可以将该方法应用于实时通信系统吗？**  
-A5: 理论上可以，但需要考虑编解码延迟和计算资源要求。对于实时应用，可能需要进一步优化网络结构和推理速度。
+1. **统一实验管理**：
+   - 使用单一实验ID管理所有相关文件和目录
+   - 自动创建结构化的日志和结果目录
+   - 详细记录实验参数和执行过程
 
-**Q6: 为什么选择TensorFlow 1.x而不是更新的版本？**  
-A6: 本项目开发初期基于TensorFlow 1.x，后续可能会提供TensorFlow 2.x的实现版本。如果需要使用最新版本，可能需要进行代码迁移。
+2. **完整流程自动化**：
+   - 自动检查并下载所需数据集
+   - 并行训练四种模型（DynamicIABF、IABF、NECST、UAE）
+   - 自动使用plot.py生成全面的对比图表
 
-**Q7: 如何优化超大数据集的训练性能？**  
-A7: 对于超大数据集，建议：
-- 增加批处理大小并相应调整学习率
-- 使用渐进式训练策略（先低分辨率，后高分辨率）
-- 考虑使用分布式训练
-- 针对特定数据集优化网络架构
+3. **灵活参数配置**：
+   - 支持配置数据集、编码比特数和训练轮数
+   - 使用合理的默认参数简化操作
+   - 保留扩展性以支持更复杂的实验设计
 
-**Q8: IABF和现有的前向纠错(FEC)编码相比有什么优势？**  
-A8: 与传统FEC编码（如LDPC、Turbo码）相比，IABF能够自适应学习数据分布，同时优化压缩率和抗噪性能，特别适合处理复杂结构化数据如图像和视频。传统FEC主要针对随机比特错误设计，不考虑数据语义信息。
+4. **实验结果分析**：
+   - 生成多种可视化图表用于模型性能对比
+   - 支持不同噪声水平下的性能测试
+   - 提供实验结果的网页展示方法
 
-**Q1: DynamicIABF与IABF相比，性能提升体现在哪些方面？**  
-A1: DynamicIABF主要在三个方面提升了性能：(1)更好的泛化能力，能适应未见过的噪声水平；(2)在高噪声环境下有更高的重建质量；(3)训练收敛更稳定，尤其是在噪声水平较高时。实验表明，在噪声水平变化的场景中，DynamicIABF的平均性能提升可达15-20%。
+### 使用方法
 
-**Q2: 如何选择适合的噪声调整率(noise_adapt_rate)？**  
-A2: 噪声调整率控制噪声水平变化的幅度，通常在0.01-0.1之间。较大的值(如0.1)使噪声调整更激进，适合对噪声变化不敏感的任务；较小的值(如0.01)使调整更平缓，适合对噪声敏感的任务。建议从0.05开始尝试，根据训练稳定性和验证性能进行调整。
+```bash
+./run_comparison.sh <experiment_id> [dataset=mnist] [n_bits=100] [n_epochs=200] [learning_rate=0.001]
+```
 
-**Q3: 渐进式训练与自适应噪声调整哪个更重要？**  
-A3: 这取决于应用场景。渐进式训练在初始阶段能帮助模型更快建立基本编解码能力，特别适合直接训练高噪声环境困难的情况；自适应噪声调整则在整个训练过程中提供更精细的噪声控制，有助于找到最佳训练路径。在实践中，两者结合通常能获得最佳效果。
+**参数说明**：
+- `experiment_id`：**必填**参数，为本次对照试验的唯一标识符，将用于命名日志和结果目录
+- `dataset`：可选参数，指定使用的数据集，默认为"mnist"
+- `n_bits`：可选参数，指定编码比特数，默认为100
+- `n_epochs`：可选参数，指定训练轮数，默认为200
+- `learning_rate`：可选参数，指定学习率，默认为0.001
 
-**Q4: DynamicIABF是否需要更长的训练时间？**  
-A4: DynamicIABF的每轮训练迭代确实比IABF多了噪声参数计算的开销，但这部分计算量很小。实际上，由于动态噪声调整机制通常能使模型更快收敛，DynamicIABF往往需要的总训练轮次反而减少了。在大多数场景中，总训练时间差异不明显，或者DynamicIABF甚至更快。
+### 使用示例
 
-**Q5: DynamicIABF是否兼容不同的数据集和信道模型？**  
-A5: 是的，DynamicIABF完全继承了IABF的数据集和信道模型兼容性，可用于MNIST、BinaryMNIST、CIFAR10、SVHN等数据集，以及BSC和BEC信道模型。动态噪声调整机制是与具体数据和信道模型无关的通用技术。
+基本用法：
+```bash
+# 使用默认参数运行对照实验，仅指定实验ID为"baseline_test"
+./run_comparison.sh baseline_test
+```
 
-**Q6: 如何选择互信息权重(miw)和自适应噪声的组合？**  
-A6: 互信息权重(miw)控制互信息最大化的强度，而自适应噪声影响训练难度调整。通常，较高的miw值(如1e-6)与自适应噪声配合使用时，可能需要较小的噪声调整率(如0.03)来防止过度波动；较低的miw值(如1e-8)则可以搭配更激进的噪声调整率(如0.07)。建议通过实验找到最佳组合。
+使用不同数据集：
+```bash
+# 使用CIFAR10数据集运行对照实验
+./run_comparison.sh cifar_comparison cifar10
+```
 
-**Q7: 如何选择合适的噪声水平范围（noise_min和noise_max）？**  
-A7: 噪声水平范围应覆盖模型预期应用的噪声条件。一般建议将`noise_min`设置为足够低以确保训练初期稳定（通常为0.01-0.05），将`noise_max`设置为预期应用中可能遇到的最高噪声水平（如0.3-0.5）。如果目标是极端噪声环境，可以将`noise_max`设置得更高，但可能需要更长的训练时间和更小的调整率。
+自定义比特数和训练轮数：
+```bash
+# 使用200个编码比特，训练15轮
+./run_comparison.sh high_capacity mnist 200 15
+```
 
-**Q8: IABF和现有的前向纠错(FEC)编码相比有什么优势？**  
-A8: 与传统FEC编码（如LDPC、Turbo码）相比，IABF能够自适应学习数据分布，同时优化压缩率和抗噪性能，特别适合处理复杂结构化数据如图像和视频。传统FEC主要针对随机比特错误设计，不考虑数据语义信息。而DynamicIABF进一步增强了这种优势，通过自适应训练提高了模型在不同噪声条件下的泛化能力。
+进行全面实验：
+```bash
+# 在Omniglot数据集上进行长时间训练
+./run_comparison.sh omniglot_full omniglot 300 50
+```
+
+自定义学习率：
+```bash
+# 使用更低的学习率0.0005进行训练
+./run_comparison.sh low_lr_test mnist 100 200 0.0005
+```
+
+### 输出结果
+
+脚本执行后，您将得到以下结果：
+
+1. **日志文件**：位于`./logs/{实验ID}/`目录
+   - `experiment.log`：总体实验日志
+   - `data_preparation.log`：数据准备日志
+   - `{model_type}_training.log`：各模型训练日志
+   - `visualization.log`：可视化过程日志
+
+2. **训练结果**：按照新的三级目录结构存储在`./results/`目录
+   - `./results/DynamicIABF/{数据集}/{时间戳}_{参数}_{实验ID}_dynamic/`
+   - `./results/IABF/{数据集}/{时间戳}_{参数}_{实验ID}_iabf/`
+   - 以此类推...
+
+3. **可视化图表**：位于`./plots/{实验ID}/`目录
+   - 基本图表：学习曲线、互信息、分布对比等
+   - 专门图表：噪声分析、重建样本对比
+   - 表格统计：重建误差对比表
+
+### 高级使用
+
+脚本中预留了在不同噪声水平下测试模型性能的框架，您可以进一步拓展以实现更多功能：
+
+- 添加不同噪声类型的对比测试
+- 实现多数据集交叉验证
+- 增加超参数扫描功能
+- 添加模型剪枝和压缩评估
+
+### 结果可视化展示
+
+完成实验后，可以通过以下方式展示结果：
+
+```bash
+# 在本地查看结果文件
+ls -la ./plots/{实验ID}/
+
+# 使用Python内置HTTP服务器展示结果
+python -m http.server 8000
+# 然后在浏览器中访问：http://{server-ip}:8000/plots/{实验ID}/
+```
+
+通过自动化脚本，研究人员可以轻松地进行系统的对照实验，快速比较不同模型在相同条件下的性能差异，加速研究进展和结果分析。
