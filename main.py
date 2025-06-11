@@ -21,6 +21,14 @@ flags.DEFINE_bool('resume', False, 'resume training if there is a model availabl
 flags.DEFINE_bool('train', True, 'True to train.')
 flags.DEFINE_bool('test', True, 'True to test.')
 
+# 添加自适应动态模型相关参数
+flags.DEFINE_bool('use_dynamic_model', False, '是否使用自适应动态模型(DynamicIABF)')
+flags.DEFINE_bool('adaptive_noise', False, '是否使用自适应噪声水平调整')
+flags.DEFINE_bool('progressive_training', False, '是否使用渐进式训练策略')
+flags.DEFINE_float('noise_min', 0.01, '渐进式训练的初始噪声水平')
+flags.DEFINE_float('noise_max', 0.3, '渐进式训练的最大噪声水平')
+flags.DEFINE_float('noise_adapt_rate', 0.05, '自适应噪声调整率')
+
 flags.DEFINE_string('ckpt', None, 'ckpt to load if resume is True. Defaults (None) to latest ckpt in logdir')
 flags.DEFINE_string('exp_id', '082701', 'exp_id appended to logdir and outdir')
 flags.DEFINE_string('gpu_id', '0', 'gpu id options')
@@ -100,6 +108,16 @@ def main():
 	os.environ['CUDA_VISIBLE_DEVICES'] = str(FLAGS.gpu_id)
 	# subpath = 'wadv_' + str(FLAGS.wadv) + 'cew_' + str(FLAGS.cew) +'klw_' + str(FLAGS.klw) + 'noise_' + str(FLAGS.noise)
 	subpath = 'miw_' + str(FLAGS.miw) + '_flip_' + str(FLAGS.flip_samples) + '_bits_' + str(FLAGS.n_bits) + '_epochs_' + str(FLAGS.n_epochs)
+	
+	# 为动态模型添加特殊标识
+	if FLAGS.use_dynamic_model:
+		model_type = "DynamicIABF"
+		if FLAGS.adaptive_noise:
+			model_type += "_adaptive"
+		if FLAGS.progressive_training:
+			model_type += "_progressive"
+		subpath = model_type + '_' + subpath
+	
 	print(subpath)
 	# FLAGS.logdir = os.path.join(FLAGS.logdir, FLAGS.datasource, subpath, FLAGS.exp_id)
 	# FLAGS.outdir = os.path.join(FLAGS.outdir, FLAGS.datasource, subpath, FLAGS.exp_id)

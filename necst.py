@@ -54,6 +54,17 @@ class NECST():
 		self.enc_layers = FLAGS.enc_arch + [self.z_dim]
 		self.enabel_adv = FLAGS.adv
 
+		# 添加自适应动态模型相关参数
+		self.use_dynamic_model = FLAGS.use_dynamic_model
+		self.adaptive_noise = FLAGS.adaptive_noise
+		self.progressive_training = FLAGS.progressive_training
+		self.noise_min = FLAGS.noise_min
+		self.noise_max = FLAGS.noise_max
+		self.noise_adapt_rate = FLAGS.noise_adapt_rate
+		self.current_noise = FLAGS.noise  # 当前噪声水平，初始值为配置的噪声水平
+		self.previous_loss = float('inf')  # 用于自适应噪声调整的上一次损失值
+		self.current_epoch = 0  # 当前训练轮次
+
 		self.last_layer_act = tf.nn.sigmoid if FLAGS.non_linear_act else None
 
 		# perturbation experiment
@@ -288,7 +299,38 @@ class NECST():
 
 		return reconstr_loss
 
-
+	# 添加自适应噪声水平调整方法
+	def adaptive_noise_level(self, current_loss):
+		"""基于训练过程中的损失变化动态调整噪声水平"""
+		if not self.adaptive_noise or not self.use_dynamic_model:
+			return self.current_noise
+		
+		if current_loss < self.previous_loss:
+			# 如果损失在减小，可以增加噪声水平来提高模型鲁棒性
+			new_noise = min(self.current_noise * (1.0 + self.noise_adapt_rate), self.noise_max)
+		else:
+			# 如果损失增加，减少噪声水平
+			new_noise = max(self.current_noise * (1.0 - self.noise_adapt_rate), self.noise_min)
+		
+		print(f"自适应噪声调整: {self.current_noise:.4f} -> {new_noise:.4f}, 当前损失: {current_loss:.4f}, 上一次损失: {self.previous_loss:.4f}")
+		self.previous_loss = current_loss
+		self.current_noise = new_noise
+		return new_noise
+	
+	# 添加渐进式训练噪声计算方法
+	def progressive_training_noise(self):
+		"""渐进式训练策略中的噪声水平计算"""
+		if not self.progressive_training or not self.use_dynamic_model:
+			return self.current_noise
+		
+		# 计算在总训练轮次中的进度
+		progress = min(1.0, self.current_epoch / float(FLAGS.n_epochs))
+		
+		# 根据进度计算当前阶段的噪声水平
+		noise_level = self.noise_min + (self.noise_max - self.noise_min) * progress
+		
+		print(f"渐进式训练噪声: {noise_level:.4f}, 训练进度: {progress:.2f}, 当前轮次: {self.current_epoch}")
+		return noise_level
 
 	def perturb_latent_code(self, x, z, reuse=tf.AUTO_REUSE):
 		"""
@@ -1274,48 +1316,6 @@ class NECST():
 
 		return total_prob, y, q, x_reconstr_logits
 
-	# def pairwise_info(self):
-	# 	"""
-	# 	which is a MUTUAL information between the pairwise codes
-	# 	as the implement is like the
-	# 	:return:
-	# 	"""
-	# 	# samples = self.mean
-	# 	# joint_probability =
-	#
-	# 	qz_samples = qz_samples.index_select(1, Variable(torch.randperm(qz_samples.size(1))[:10000].cuda()))
-	#
-	# 	K, S = qz_samples.size()
-	# 	N, _, nparams = qz_params.size()
-	# 	assert (nparams == q_dist.nparams)
-	# 	assert (K == qz_params.size(1))
-	#
-	# 	marginal_entropies = torch.zeros(K).cuda()
-	# 	joint_entropy = torch.zeros(1).cuda()
-	#
-	# 	pbar = tqdm(total=S)
-	# 	k = 0
-	# 	while k < S:
-	# 		batch_size = min(10, S - k)
-	# 		logqz_i = q_dist.log_density(
-	# 			qz_samples.view(1, K, S).expand(N, K, S)[:, :, k:k + batch_size],
-	# 			qz_params.view(N, K, 1, nparams).expand(N, K, S, nparams)[:, :, k:k + batch_size])
-	# 		k += batch_size
-	#
-	# 		# computes - log q(z_i) summed over minibatch
-	# 		marginal_entropies += (math.log(N) - logsumexp(logqz_i, dim=0, keepdim=False).data).sum(1)
-	# 		# computes - log q(z) summed over minibatch
-	# 		logqz = logqz_i.sum(1)  # (N, S)
-	# 		joint_entropy += (math.log(N) - logsumexp(logqz, dim=0, keepdim=False).data).sum(0)
-	# 		pbar.update(batch_size)
-	# 	pbar.close()
-	#
-	# 	marginal_entropies /= S
-	# 	joint_entropy /= S
-	#
-	# 	return marginal_entropies, joint_entropy
-
-
 
 
 	def train(self, ckpt=None, verbose=True):
@@ -1351,11 +1351,32 @@ class NECST():
 		epoch_train_losses = []
 		epoch_valid_losses = []
 		epoch_save_paths = []
+		
+		# 在训练前初始化噪声水平
+		self.current_epoch = 0
+		prev_epoch_valid_loss = float('inf')
+		
+		# 如果启用渐进式训练，初始化噪声水平
+		if self.use_dynamic_model and self.progressive_training:
+			self.current_noise = self.progressive_training_noise()
+			# 暂时保存原始噪声值
+			original_noise = FLAGS.noise
+			FLAGS.noise = self.current_noise
+			print(f"渐进式训练初始噪声水平: {self.current_noise:.4f}")
 
 		for epoch in range(FLAGS.n_epochs):
+			# 更新当前轮次
+			self.current_epoch = epoch
+			
+			# 如果启用渐进式训练，调整噪声水平
+			if self.use_dynamic_model and self.progressive_training:
+				self.current_noise = self.progressive_training_noise()
+				FLAGS.noise = self.current_noise
+			
 			sess.run(train_iterator.initializer)
 			sess.run(valid_iterator.initializer)
 			epoch_train_loss = 0.
+			
 			estimated_mi = 0.
 			total_tc = 0.
 			total_dloss = 0.
@@ -1364,22 +1385,17 @@ class NECST():
 			epohy_x = 0.
 			run_options = tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE)
 			run_metadata = tf.RunMetadata()
-			# summary, _ = sess.run([merged, train_step],
-			# 					  feed_dict=feed_dict(True),
-			# 					  options=run_options,
-			# 					  run_metadata=run_metadata)
+			
 			self.train_writer.add_run_metadata(run_metadata, 'step%d' % epoch)
 			while True:
 				try:
 					self.training = True
 					if (not self.is_binary) and (self.datasource.target_dataset != 'celebA'):
 						x = sess.run(next_train_batch)[0]
-
 					else:
 						# no labels available for binarized MNIST
-
 						x = sess.run(next_train_batch)
-						# pdb.set_trace()
+						
 					if self.noisy_mnist:
 						# print('training with noisy MNIST...')
 						feed_dict = {self.x: (x + np.random.normal(0, 0.5, x.shape)), self.true_x: x}
@@ -1388,28 +1404,22 @@ class NECST():
 
 					# REINFORCE-style training with VIMCO or vanilla gradient update
 					if not self.discrete_relax:
-						# if epoch <150:
-							# pdb.set_trace()
-						hy, hy_x,tc,_,_ = sess.run([self.kl_loss,self.conditional_entropy, self.tc_loss,self.discrete_train_op1,self.discrete_train_op2], feed_dict)
-						_, dloss= sess.run([self.discrete_train_op3,self.D_loss],feed_dict)
-						# pdb.set_trace()
-						# else:
-						# 	hy, hy_x,_,_= sess.run([self.kl_loss, self.conditional_entropy, self.discrete_train_op1], feed_dict)
+						hy, hy_x, tc, _, _ = sess.run([self.kl_loss, self.conditional_entropy, self.tc_loss, self.discrete_train_op1, self.discrete_train_op2], feed_dict)
+						_, dloss = sess.run([self.discrete_train_op3, self.D_loss], feed_dict)
+						
+						# 如果启用自适应噪声水平调整，获取当前损失进行调整
+						if self.use_dynamic_model and self.adaptive_noise:
+							current_loss = sess.run(self.reconstr_loss, feed_dict)
+							if num_batches % 10 == 0:  # 每10个批次调整一次噪声水平
+								self.current_noise = self.adaptive_noise_level(current_loss)
+								FLAGS.noise = self.current_noise
 					else:
 						# this works for both gumbel-softmax
 						sess.run([self.train_op], feed_dict)
 
-
-					# hy, hy_x,batch_loss, train_summary, gs = sess.run([
-					# 	-self.kl_loss,self.conditional_entropy,self.reconstr_loss, self.summary_op, self.global_step], feed_dict)
-
-
-					# train_writer.add_summary(summary, i)
-					# print('Adding run metadata for', i)
-
 					batch_loss, train_summary, gs = sess.run([
 						self.reconstr_loss, self.summary_op, self.global_step],
-						feed_dict,options=run_options,
+						feed_dict, options=run_options,
 										  run_metadata=run_metadata)
 
 					hy = -hy
@@ -1420,23 +1430,17 @@ class NECST():
 					total_tc += tc
 					total_dloss += dloss
 
-
 					# self.train_writer.add_summary(train_summary, gs)
 					num_batches += 1
 
 				except tf.errors.OutOfRangeError:
 					break
-			# end of training epoch; adjust temperature here if using Gumbel-Softmax
-			# if self.discrete_relax:
-			# 	if (counter % 1000 == 0) and (counter > 0):
-			# 		self.adj_temp = np.maximum(self.tau * np.exp(-self.anneal_rate * counter), self.min_temp)
-			# 		print('adjusted temperature to: {}'.format(self.adj_temp))
-			# enter validation phase
+			
 			if verbose:
 				epoch_train_loss /= num_batches
 				estimated_mi /= num_batches
 				epohy /= num_batches
-				epohy_x /=num_batches
+				epohy_x /= num_batches
 				total_tc /= num_batches
 				self.training = False
 				if (not self.is_binary) and (self.datasource.target_dataset != 'celebA'):
@@ -1452,6 +1456,18 @@ class NECST():
 
 				# save run stats
 				epoch_valid_loss, valid_summary, gs = sess.run([self.test_loss, self.summary_op, self.global_step], feed_dict=feed_dict)
+				
+				# 如果使用自适应噪声调整，使用验证损失来更新噪声水平
+				if self.use_dynamic_model and self.adaptive_noise:
+					if epoch_valid_loss < prev_epoch_valid_loss:
+						self.current_noise = min(self.current_noise * (1.0 + self.noise_adapt_rate/2), self.noise_max)
+						print(f"验证损失减小，增加噪声水平: {self.current_noise:.4f}")
+					else:
+						self.current_noise = max(self.current_noise * (1.0 - self.noise_adapt_rate/2), self.noise_min)
+						print(f"验证损失增加，减少噪声水平: {self.current_noise:.4f}")
+					FLAGS.noise = self.current_noise
+					prev_epoch_valid_loss = epoch_valid_loss
+				
 				if epoch_train_loss < 0:  # note: this only applies to non-binary data since it's L2 loss
 					print('Epoch {}, (no sqrt) l2 train loss: {:0.6f}, hy:{:0.6f}, hy_x:{:0.6f},mi:{:0.6f}, l2 valid loss: {:0.6f},total_tc: {:0.6f},time: {}s'. \
 				format(epoch+1, epoch_train_loss, epohy, epohy_x, estimated_mi,np.sqrt(epoch_valid_loss), total_tc, int(time.time()-t0)))
@@ -1460,11 +1476,21 @@ class NECST():
 					print(
 						'Epoch {}, l2 train loss: {:0.6f}, hy:{:0.6f}, hy_x:{:0.6f},mi:{:0.6f}, l2 valid loss: {:0.6f}, total_tc: {:0.6f}, dloss:{:0.6f},time: {}s'. \
 						format(epoch + 1, epoch_train_loss, epohy, epohy_x, estimated_mi, np.sqrt(epoch_valid_loss), total_tc, total_dloss, int(time.time() - t0)))
+				
+				# 如果启用了动态模型，显示当前噪声水平
+				if self.use_dynamic_model:
+					print(f"当前噪声水平: {self.current_noise:.4f}")
+					
 				sys.stdout.flush()
 				save_path = self.saver.save(sess, os.path.join(FLAGS.logdir, 'model.ckpt'), global_step=gs)
 				epoch_train_losses.append(epoch_train_loss)
 				epoch_valid_losses.append(epoch_valid_loss)
 				epoch_save_paths.append(save_path)
+				
+		# 如果启用了渐进式训练，训练结束后恢复原始噪声设置
+		if self.use_dynamic_model and self.progressive_training:
+			FLAGS.noise = original_noise
+		
 		best_ckpt = None
 		if verbose:
 			min_idx = epoch_valid_losses.index(min(epoch_valid_losses))
@@ -1548,11 +1574,9 @@ class NECST():
 		n, bins, patches = plt.hist(distribution_list, 100, density=False, facecolor='g', alpha=0.75)
 		plt.xlabel('Marginal Probability')
 		plt.ylabel('Numbers')
-		# plt.title('Histogram of IQ')
-		# plt.text(60, .025, r'$\mu=100,\ \sigma=15$')
+
 		plt.xlim(0, 1)
-		# plt.ylim(0, 0.03)
-		# plt.grid(True)
+	
 		plt.savefig(os.path.join(FLAGS.outdir, 'distribution.pdf'))
 
 		test_loss /= num_batches
@@ -1645,13 +1669,7 @@ class NECST():
 		else:
 			x_t = sess.run(next_test_batch)
 
-		# random initialization of 10 samples with noise
-		# print('initializing markov chain with random Gaussian noise...')
-		# x_t = np.clip(np.random.normal(
-		# 	0., 0.01, 10 * self.input_dim).reshape(-1, self.input_dim), 0., 1.)E
-		# print('initializing markov chain with random Bernoulli noise...')
-		# x_t = np.random.binomial(
-			# 1, 0.5, 10 * self.input_dim).reshape(-1, self.input_dim)
+
 
 		# just get first 10 samples
 		samples = [x_t[0:10]]
