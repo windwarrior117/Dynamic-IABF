@@ -645,44 +645,81 @@ python3 plot.py --model_dirs "mnist/miw_1e-07_flip_7_bits_100_epochs_10/iabf_tes
 
 ## 可视化工具
 
+### 模块化可视化系统
+
+本项目提供了一个模块化、可扩展的可视化系统，用于分析和比较DynamicIABF、IABF、NECST和UAE等模型的性能。该系统包含以下主要组件：
+
+1. **主入口点**：`plot.py` 作为兼容性入口，内部调用模块化的 `visual` 包实现功能
+2. **核心可视化类**：`ModelVisualizer` 负责协调所有可视化功能
+3. **专用可视化模块**：针对学习曲线、分布比较、互信息分析、重建质量等的特定可视化器
+4. **支持工具**：数据提取、模型目录查找和样式设置等工具函数
+
 ### 功能概述
 
-可视化工具`plot.py`是一个功能强大的模块，用于比较DynamicIABF、IABF、NECST和UAE模型的性能。它支持以下功能：
+可视化系统支持以下功能：
 
-- 绘制训练和验证损失曲线
-- 比较模型间的互信息值
-- 比较模型的边缘分布
-- 比较重建样本质量（包括PSNR指标）
-- 比较测试指标（测试损失和互信息）
-- 生成重建误差表格
-- 分析噪声水平对模型性能的影响
-- **新增：DynamicIABF模型特性分析**（自适应噪声和渐进式训练的可视化）
+- **学习曲线分析**：训练和验证损失随训练过程的变化
+- **互信息分析**：模型间互信息比较及其随训练的变化趋势
+- **分布可视化**：编码的边缘概率分布比较
+- **重建质量评估**：原始图像与重建图像对比及PSNR/SSIM指标计算
+- **测试指标对比**：多模型测试性能和噪声鲁棒性分析
+- **DynamicIABF特性分析**：自适应噪声和渐进式训练的效果可视化
 
-### 支持的模型类型
+### 使用方法
 
-工具现支持四种模型类型的自动识别和可视化：
+#### 命令行使用
 
-| 模型类型 | 识别依据 | 特点 |
-|---------|---------|------|
-| **DynamicIABF** | `use_dynamic_model=True` | 自适应噪声和/或渐进式训练特性 |
-| **IABF** | `miw>0` 且 `flip_samples>0` | 互信息最大化和对抗性位翻转 |
-| **NECST** | `miw=0` 且 `flip_samples=0` 且 `noise>0` | 仅随机信道噪声 |
-| **UAE** | `miw=0` 且 `flip_samples=0` 且 `noise=0` | 无噪声、无信息约束 |
+```bash
+# 自动发现并可视化所有模型
+python plot.py --auto_discover --output_dir ./plots/
 
-### 支持的数据集
+# 比较特定模型
+python plot.py --model_dirs "DynamicIABF/mnist/exp1" "IABF/mnist/exp2" "NECST/mnist/exp3" --model_names "DynamicIABF" "IABF" "NECST" --plot_type all
 
-工具支持以下数据集：
+# 仅生成特定类型图表
+python plot.py --auto_discover --plot_type learning --output_dir ./plots/
 
-- MNIST
-- BinaryMNIST (binary_mnist)
-- CIFAR10
-- SVHN
-- Omniglot
-- CelebA
+# 指定数据集
+python plot.py --dataset mnist --auto_discover --output_dir ./plots/
+```
+
+#### Python API使用
+
+```python
+from visual.core import ModelVisualizer
+
+# 创建可视化器
+visualizer = ModelVisualizer(
+    base_dir="./results/", 
+    model_dirs=["DynamicIABF/mnist/exp1", "IABF/mnist/exp2"],
+    model_names=["DynamicIABF", "IABF"],
+    dataset_name="mnist"
+)
+
+# 生成特定图表
+visualizer.plot_learning_curves("./plots/learning.png")
+visualizer.plot_mutual_information("./plots/mi.png")
+visualizer.plot_reconstruction_samples("./plots/reconstruction.png")
+
+# 生成所有支持的图表
+visualizer.plot_all("./plots/")
+```
+
+### 支持的图表类型
+
+可视化系统支持以下图表类型：
+
+1. **学习曲线** (`learning`)：训练和验证损失曲线
+2. **互信息比较** (`mutual_information`)：各模型互信息值对比
+3. **互信息随时间变化** (`mi_over_time`)：互信息随训练轮次的变化
+4. **分布比较** (`distribution`)：激活值分布直方图
+5. **重建样本比较** (`reconstruction`)：原始与重建图像对比
+6. **重建误差表格** (`errors_table`)：重建质量指标可视化表格
+7. **测试指标比较** (`metrics`)：测试损失、准确率等指标比较
+8. **噪声分析** (`noise_analysis`)：不同噪声水平下的性能曲线
+9. **DynamicIABF特性分析** (`dynamic_iabf`)：DynamicIABF模型特有特性分析
 
 ### 命令行参数
-
-plot.py支持以下命令行参数：
 
 ```
 --base_dir: 结果文件基础目录（默认: "./results/"）
@@ -691,94 +728,82 @@ plot.py支持以下命令行参数：
 --model_types: 要显示的模型类型（DynamicIABF/IABF/NECST/UAE）
 --output_dir: 保存图像的输出目录（默认: "./plots/"）
 --auto_discover: 自动发现模型目录
---plot_type: 图表类型 [all, learning, mi, distribution, reconstruction, metrics, noise, table]
+--plot_type: 图表类型 [all, learning, distribution, mutual_information, mi_over_time, reconstruction, errors_table, metrics, noise_analysis, dynamic_iabf]
 --extract_data: 强制提取和更新测试数据
 --num_samples: 要提取的测试样本数量（默认: 10）
 --dataset: 数据集类型 [mnist, binary_mnist, cifar10, svhn, omniglot, celeba]
 ```
 
-### 使用方法示例
+### 使用示例
 
-#### 1. 自动发现并可视化所有模型（包括DynamicIABF）
-
-```bash
-python3 plot.py --auto_discover --dataset mnist --output_dir "./plots/"
-```
-
-#### 2. 对比不同类型模型性能
+#### 自动发现并可视化所有模型（包括DynamicIABF）
 
 ```bash
-python3 plot.py --model_dirs "mnist/DynamicIABF_adaptive_progressive_miw_1e-07_flip_7_bits_100_epochs_10/dynamic_iabf_test" "mnist/miw_1e-07_flip_7_bits_100_epochs_10/iabf_test10" "mnist/miw_0.0_flip_0_bits_100_epochs_10/necst_test10" --model_names "DynamicIABF" "IABF" "NECST" --plot_type all --output_dir "./plots_comparison/"
+python plot.py --auto_discover --dataset mnist --output_dir "./plots/"
 ```
 
-#### 3. 仅比较DynamicIABF的不同配置
+#### 对比不同模型配置性能
 
 ```bash
-python3 plot.py --model_dirs "mnist/DynamicIABF_adaptive_miw_1e-07_flip_7_bits_100_epochs_10/model1" "mnist/DynamicIABF_progressive_miw_1e-07_flip_7_bits_100_epochs_10/model2" "mnist/DynamicIABF_adaptive_progressive_miw_1e-07_flip_7_bits_100_epochs_10/model3" --model_names "仅自适应" "仅渐进式" "组合模式" --plot_type all --output_dir "./plots_dynamic/"
+python plot.py --model_dirs "DynamicIABF/mnist/dynamic_iabf_test" "IABF/mnist/iabf_test" "NECST/mnist/necst_test" --model_names "DynamicIABF" "IABF" "NECST" --plot_type all --output_dir "./plots_comparison/"
 ```
 
-#### 4. 专门生成噪声分析图
+#### 仅比较DynamicIABF的不同配置
 
 ```bash
-python3 plot.py --auto_discover --model_types "DynamicIABF" "IABF" --plot_type noise --output_dir "./plots_noise/"
+python plot.py --model_dirs "DynamicIABF/mnist/adaptive_only" "DynamicIABF/mnist/progressive_only" "DynamicIABF/mnist/combined" --model_names "仅自适应" "仅渐进式" "组合模式" --plot_type all --output_dir "./plots_dynamic/"
 ```
 
-### 输出图表说明
+#### 专门分析噪声鲁棒性
 
-#### 基本图表
+```bash
+python plot.py --auto_discover --model_types "DynamicIABF" "IABF" --plot_type noise_analysis --output_dir "./plots_noise/"
+```
 
-- **learning_curves.png**: 训练和验证损失曲线
-- **mutual_information.png**: 互信息值比较
-- **distribution_comparison.png**: 边缘概率分布
-- **reconstruction_samples.png**: 重建图像对比
-- **test_metrics.png**: 测试指标比较
-- **noise_analysis.png**: 不同噪声水平的性能分析
-- **reconstruction_errors_table.png**: 重建误差表格
+### 输出图表
 
+系统会在指定的输出目录下生成以下图表：
 
+- `learning_curves.png`：学习曲线对比
+- `mutual_information.png`：互信息比较
+- `mutual_information_over_time.png`：互信息随时间变化趋势
+- `distribution_comparison.png`：编码分布直方图
+- `reconstruction_samples.png`：重建样本质量对比
+- `reconstruction_errors_table.png`：重建误差指标表格
+- `test_metrics.png`：测试指标条形图
+- `noise_analysis.png`：噪声鲁棒性曲线
+- `dynamic_iabf_features.png`：DynamicIABF特性分析（仅适用于DynamicIABF模型）
 
-#### DynamicIABF特有图表
+### 技术特点
 
-- **dynamic_iabf_features.png**: 专门针对DynamicIABF模型的特性分析
-  - 左侧图表：不同DynamicIABF配置（仅自适应、仅渐进式、组合模式）的测试损失对比
-  - 右侧图表：各模型的噪声范围和测试噪声水平可视化
-
-### DynamicIABF噪声分析特性
-
-针对DynamicIABF模型，工具提供了专门的可视化功能：
-
-1. **噪声自适应范围分析**：显示模型的噪声调整范围（min_noise到max_noise）和自适应调整率
-2. **渐进式噪声轨迹**：可视化训练过程中噪声水平的理论变化轨迹
-3. **配置对比**：不同配置组合（自适应、渐进式、两者结合）的性能对比
-
-### 排障指南
-
-如果遇到以下问题：
-
-1. **找不到模型**：确保model_dirs路径正确，相对于results目录
-2. **图表生成错误**：检查是否有完整的训练日志和config.json文件
-3. **中文显示问题**：如果中文显示不正常，可能需要安装中文字体
-
-**提示**：对于DynamicIABF模型，确保配置文件包含以下参数才能正确识别和可视化：
-- `use_dynamic_model: true`
-- `adaptive_noise: true/false`（自适应噪声特性）
-- `progressive_training: true/false`（渐进式训练特性）
-- `noise_min`、`noise_max`、`noise_adapt_rate`（噪声范围和调整参数）
-
-### 示例可视化效果
-
-以下是针对不同模型类型生成的主要可视化图表：
-
-#### 噪声分析图
-通过噪声分析图，可以直观比较DynamicIABF与其他模型在不同噪声水平下的性能差异。DynamicIABF尤其在高噪声环境下显示出更出色的鲁棒性。
-
-#### DynamicIABF特性分析图
-此图展示不同DynamicIABF配置的性能对比，帮助研究人员理解自适应噪声和渐进式训练各自的贡献以及协同效果。测试结果表明，组合使用两种技术通常能获得最佳性能。
-
-#### 重建样本对比
-通过直观的样本重建对比，可以看到DynamicIABF在高噪声环境下保持更高的重建质量，PSNR值通常高于传统IABF和NECST模型。
+1. **模块化架构**：每个功能封装在专用模块中，便于扩展和维护
+2. **兼容性设计**：保留与原始代码的兼容性，确保现有流程不受影响
+3. **统一数据管理**：统一的测试数据提取和管理机制
+4. **高质量输出**：支持出版级图表，包括矢量格式输出
+5. **丰富的自定义选项**：提供多种参数配置可视化效果
 
 ## 更新日志
+
+### 20250429更新：优化可视化组件和指标生成
+
+1. **metrics.pkl文件自动生成功能**
+   - 创建visual/generate_metrics.py脚本用于从训练日志和重建结果中提取指标
+   - 在necst.py中集成自动生成metrics.pkl功能，在test阶段自动调用
+   - 支持MSE, MAE, PSNR, SSIM等重建质量指标自动计算
+   - 保存互信息和分布数据以便可视化使用
+
+2. **解决可视化图表问题**
+   - 修复distribution_comparison.pdf无法正确显示的问题
+   - 增强visual/plots/distribution.py，支持从多种来源读取分布数据
+   - 当真实分布数据不可用时，根据模型类型生成合理的模拟分布
+   - 自动保存分布数据为.npy格式方便下次使用
+
+3. **可视化流程优化**
+   - 简化模型比较可视化流程，改进数据读取机制
+   - 增强可视化组件对数据缺失的容错能力
+   - 保证四种模型的可视化图表能够完整生成
+
+这些更新大大提高了模型评估和可视化的便捷性，使得模型性能比较更加直观和全面。用户可以使用visual/generate_metrics.py脚本为已训练模型批量生成指标文件，或者直接通过测试阶段自动生成，然后通过可视化工具进行全面分析。
 
 ### 2025年5月25日更新：自动化对照训练脚本
 

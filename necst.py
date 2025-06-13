@@ -1570,6 +1570,9 @@ class NECST():
 		z_list = np.concatenate(z_list,axis=0)
 		distribution_list = z_list.sum(axis=0)*1.0/(total_len*100)
 		print (distribution_list)
+		
+		# 保存分布数据为numpy文件，以便可视化使用
+		np.save(os.path.join(FLAGS.outdir, 'distribution.npy'), distribution_list)
 
 		n, bins, patches = plt.hist(distribution_list, 100, density=False, facecolor='g', alpha=0.75)
 		plt.xlabel('Marginal Probability')
@@ -1588,6 +1591,14 @@ class NECST():
 		print('L2 test loss (per pixel): {:0.6f}'.format(np.sqrt(test_loss)/self.input_dim))
 		print ('mutual information', mi)
 		# print (hy_,hy_x_)
+		
+		# 在测试完成后自动生成metrics.pkl文件
+		try:
+			dataset_name = self.datasource.target_dataset.lower()
+			test_data_file = f'./data/{dataset_name}_test_data.pkl'
+			self.generate_metrics(test_data_file, distribution_list)
+		except Exception as e:
+			print(f"生成metrics.pkl时出错: {str(e)}")
 
 		return test_loss
 
@@ -1694,3 +1705,168 @@ class NECST():
 		plot(samples, m=10, n=10, title='markov_chain_samples')
 
 		return samples
+
+	def generate_metrics(self, test_data_file=None, distribution_list=None):
+		"""生成metrics.pkl文件，保存模型评估指标"""
+		import os
+		import pickle
+		import numpy as np
+		from skimage.metrics import peak_signal_noise_ratio as psnr
+		from skimage.metrics import structural_similarity as ssim
+		
+		# 如果未指定测试数据文件
+		if test_data_file is None:
+			dataset_name = self.datasource.target_dataset.lower()
+			test_data_file = f'./data/{dataset_name}_test_data.pkl'
+		
+		# 设置指标文件路径
+		metrics_file = os.path.join(FLAGS.outdir, 'metrics.pkl')
+		
+		# 如果文件已存在，询问是否覆盖
+		if os.path.exists(metrics_file):
+			print(f"metrics.pkl已经存在: {metrics_file}")
+			
+		# 收集指标
+		metrics = {}
+		
+		# 从日志文件提取指标
+		log_file = os.path.join(FLAGS.outdir, 'log.txt')
+		if os.path.exists(log_file):
+			with open(log_file, 'r') as f:
+				for line in f:
+					# 提取L2测试损失
+					if "L2 squared test loss (per image)" in line:
+						try:
+							value = float(line.split(':')[-1].strip())
+							metrics['l2_squared_loss'] = value
+						except:
+							pass
+							
+					elif "L2 test loss (per image)" in line:
+						try:
+							value = float(line.split(':')[-1].strip())
+							metrics['l2_loss'] = value
+						except:
+							pass
+							
+					elif "L2 squared test loss (per pixel)" in line:
+						try:
+							value = float(line.split(':')[-1].strip())
+							metrics['l2_squared_pixel_loss'] = value
+						except:
+							pass
+							
+					elif "L2 test loss (per pixel)" in line:
+						try:
+							value = float(line.split(':')[-1].strip())
+							metrics['l2_pixel_loss'] = value
+						except:
+							pass
+					
+					# 提取互信息
+					elif "mutual information" in line.lower():
+						try:
+							value = float(line.split()[-1].strip())
+							metrics['mi'] = value
+						except:
+							pass
+		
+		# 保存分布数据
+		if distribution_list is not None:
+			metrics['distribution'] = distribution_list
+		
+		# 从重建结果计算指标
+		reconstr_file = os.path.join(FLAGS.outdir, 'reconstr.pkl')
+		if os.path.exists(reconstr_file) and os.path.exists(test_data_file):
+			try:
+				with open(reconstr_file, 'rb') as f:
+					reconstructions = pickle.load(f)
+					
+				# 检查重建是否为numpy数组
+				if not isinstance(reconstructions, np.ndarray):
+					print(f"警告: 重建数据不是numpy数组: {type(reconstructions)}")
+				else:
+					with open(test_data_file, 'rb') as f:
+						test_data = pickle.load(f)
+						
+					# 检查数据类型
+					if isinstance(test_data, tuple) and len(test_data) >= 2:
+						# 处理返回(flat_data, image_data)的情况
+						originals = test_data[0]
+					else:
+						originals = test_data
+						
+					# 确保originals是numpy数组
+					if not isinstance(originals, np.ndarray):
+						originals = np.array(originals)
+						
+					# 检查是否有足够的样本
+					if len(originals) < len(reconstructions):
+						print(f"警告: 测试样本数量不足 ({len(originals)}) < ({len(reconstructions)})")
+						originals = originals[:min(len(originals), len(reconstructions))]
+						reconstructions = reconstructions[:min(len(originals), len(reconstructions))]
+					else:
+						originals = originals[:len(reconstructions)]
+						
+					# 确保值在[0,1]范围内
+					if originals.max() > 1.0:
+						originals = originals / 255.0
+					if reconstructions.max() > 1.0:
+						reconstructions = reconstructions / 255.0
+						
+					# 计算MSE和MAE
+					mse = np.mean(np.square(originals - reconstructions))
+					mae = np.mean(np.abs(originals - reconstructions))
+					metrics['mse'] = float(mse)
+					metrics['mae'] = float(mae)
+					
+					# 计算PSNR和SSIM
+					# 需要将向量重塑为图像
+					if originals.ndim == 2 and originals.shape[1] in [784, 3072, 12288]:
+						# MNIST (28x28), CIFAR (32x32x3), CelebA (64x64x3)
+						psnr_vals = []
+						ssim_vals = []
+						
+						for i in range(len(originals)):
+							orig = originals[i]
+							recon = reconstructions[i]
+							
+							# 重塑为图像
+							if orig.size == 784:  # MNIST
+								orig = orig.reshape(28, 28)
+								recon = recon.reshape(28, 28)
+								psnr_val = psnr(orig, recon, data_range=1.0)
+								ssim_val = ssim(orig, recon, data_range=1.0)
+							elif orig.size == 3072:  # CIFAR
+								orig = orig.reshape(32, 32, 3)
+								recon = recon.reshape(32, 32, 3)
+								psnr_val = psnr(orig, recon, data_range=1.0)
+								ssim_val = ssim(orig, recon, data_range=1.0, channel_axis=2)
+							elif orig.size == 12288:  # CelebA
+								orig = orig.reshape(64, 64, 3)
+								recon = recon.reshape(64, 64, 3)
+								psnr_val = psnr(orig, recon, data_range=1.0)
+								ssim_val = ssim(orig, recon, data_range=1.0, channel_axis=2)
+							else:
+								continue
+								
+							psnr_vals.append(psnr_val)
+							ssim_vals.append(ssim_val)
+						
+						if psnr_vals:
+							metrics['psnr'] = float(np.mean(psnr_vals))
+						if ssim_vals:
+							metrics['ssim'] = float(np.mean(ssim_vals))
+			except Exception as e:
+				print(f"计算重建指标时出错: {str(e)}")
+		
+		# 保存指标
+		if metrics:
+			with open(metrics_file, 'wb') as f:
+				pickle.dump(metrics, f, pickle.HIGHEST_PROTOCOL)
+			print(f"成功生成metrics.pkl: {metrics_file}")
+			print(f"指标内容: {metrics}")
+			return True
+		else:
+			print(f"警告: 未找到任何指标，未生成文件: {metrics_file}")
+			return False
